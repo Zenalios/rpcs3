@@ -9,6 +9,10 @@
 #include "vkutils/chip_class.h"
 #include <vulkan/vulkan_core.h>
 
+// Signed blend equation emulation (issue #11149): current pass of the two-pass wrapping-add split.
+// Defined in RSXDrawCommands.cpp.
+extern u32 g_rsx_addsigned_pass;
+
 namespace vk
 {
 	VkImageViewType get_view_type(rsx::texture_dimension_extended type)
@@ -1163,6 +1167,18 @@ void VKGSRender::end()
 		m_current_frame->flags &= ~frame_context_state::dirty;
 	}
 
+	// Signed blend equation emulation (issue #11149): the ROP epilogue split bits live in the per-draw
+	// fragment env, so the env must refresh whenever the signed-blend state toggles between draws.
+	const bool is_signed_blend = rsx::method_registers.blend_enabled() &&
+		(rsx::method_registers.blend_equation_rgb() == rsx::blend_equation::add_signed ||
+		 rsx::method_registers.blend_equation_rgb() == rsx::blend_equation::reverse_subtract_signed);
+
+	if (is_signed_blend || m_prev_draw_was_signed_blend)
+	{
+		m_graphics_state |= rsx::pipeline_state::fragment_state_dirty;
+	}
+	m_prev_draw_was_signed_blend = is_signed_blend;
+
 	analyse_current_rsx_pipeline();
 
 	m_frame_stats.setup_time += m_profiler.duration();
@@ -1271,6 +1287,43 @@ void VKGSRender::end()
 		}
 	}
 	while (draw_call.next());
+
+	// Signed blend equations (issue #11149): RSX FUNC_ADD_SIGNED accumulates two's-complement byte
+	// deltas with wraparound instead of saturation. Emulate as a wrapping byte add by re-emitting the
+	// draw a second time: the first pass (above) blended the positive deltas, this pass re-runs the
+	// same geometry with the inverse blend op while the ROP epilogue emits the negative magnitudes.
+	if (is_signed_blend)
+	{
+		g_rsx_addsigned_pass = 1;
+		m_graphics_state |= rsx::pipeline_state::pipeline_config_dirty;
+		m_graphics_state |= rsx::pipeline_state::fragment_state_dirty;
+
+		if (load_program())
+		{
+			load_program_env();
+			bind_texture_env();
+
+			sub_index = 0;
+			m_current_draw.subdraw_id = 0;
+
+			draw_call.begin();
+			do
+			{
+				emit_geometry(sub_index++);
+
+				if (draw_call.is_trivial_instanced_draw)
+				{
+					draw_call.end();
+				}
+			}
+			while (draw_call.next());
+		}
+
+		g_rsx_addsigned_pass = 0;
+		// Leave state dirty so the next draw rebuilds a clean pipeline and fragment env
+		m_graphics_state |= rsx::pipeline_state::pipeline_config_dirty;
+		m_graphics_state |= rsx::pipeline_state::fragment_state_dirty;
+	}
 
 	if (m_current_command_buffer->flags & vk::command_buffer::cb_has_conditional_render)
 	{

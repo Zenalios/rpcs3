@@ -202,6 +202,8 @@ namespace glsl
 				{ "MSAA_SAMPLE_CTRL_LENGTH     ", rsx::ROP_control_bits::MSAA_SAMPLE_CTRL_NUM_BITS },
 				{ "FRAG_DEPTH_24_BIT           ", rsx::ROP_control_bits::FRAG_DEPTH_24_BIT },
 				{ "FRAG_DEPTH_FLOAT_BIT        ", rsx::ROP_control_bits::FRAG_DEPTH_FLOAT_BIT },
+				{ "SIGNED_BLEND_SPLIT_PASS0_BIT", rsx::ROP_control_bits::SIGNED_BLEND_SPLIT_PASS0_BIT },
+				{ "SIGNED_BLEND_SPLIT_PASS1_BIT", rsx::ROP_control_bits::SIGNED_BLEND_SPLIT_PASS1_BIT },
 				{ "ROP_CMD_MASK                ", rsx::ROP_control_bits::ROP_CMD_MASK }
 			});
 

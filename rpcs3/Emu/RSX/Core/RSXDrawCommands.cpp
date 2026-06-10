@@ -11,6 +11,11 @@
 
 #include "Emu/Memory/vm.h"
 
+// Signed blend equation emulation (issue #11149): current pass of the two-pass split.
+// 0 = first (additive) pass, 1 = second (subtractive) pass. RSX thread only.
+// Defined in this backend-agnostic TU so non-Vulkan builds still link; only the VK backend writes it.
+u32 g_rsx_addsigned_pass = 0;
+
 namespace rsx
 {
 	void draw_command_processor::analyse_inputs_interleaved(vertex_input_layout& result, const vertex_program_metadata_t& vp_metadata)
@@ -683,6 +688,17 @@ namespace rsx
 		// Always encode the alpha function. Toggling alpha-test is not guaranteed to trigger context param reload anymore.
 		const u32 alpha_func = static_cast<u32>(REGS(m_ctx)->alpha_func());
 		rop_control.set_alpha_test_func(alpha_func);
+
+		// Signed blend equations (issue #11149): tag the draw for the ROP epilogue's two's-complement
+		// source split. PASS0 = positive deltas, PASS1 = negative magnitudes.
+		// Vulkan only for now - the GL backend has neither the two-pass re-emit nor the env refresh tracking.
+		if (g_cfg.video.renderer == video_renderer::vulkan &&
+			REGS(m_ctx)->blend_enabled() &&
+			(REGS(m_ctx)->blend_equation_rgb() == rsx::blend_equation::add_signed ||
+			 REGS(m_ctx)->blend_equation_rgb() == rsx::blend_equation::reverse_subtract_signed))
+		{
+			rop_control.enable_signed_blend_split(g_rsx_addsigned_pass);
+		}
 
 		// Generate wpos coefficients
 		// wpos equation is now as follows (ignoring pixel center offset):

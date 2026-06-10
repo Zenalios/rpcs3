@@ -76,6 +76,23 @@ R"(
 	}
 #endif
 
+	// Signed blend equation emulation (issue #11149). The source color encodes a two's-complement byte
+	// delta: values < 0.5 are positive deltas, values >= 0.5 are wrapped negative deltas (1 + d).
+	// Fixed-function UNORM blending clamps at 0 and 1 instead of wrapping, so the draw is issued twice
+	// and the source is split per channel (runtime bits, no shader variants required):
+	// PASS0: keep positive deltas only (blended with the equation's additive direction)
+	// PASS1: emit the magnitude of negative deltas (blended with the inverse direction)
+	if (_test_bit(rop_control, SIGNED_BLEND_SPLIT_PASS0_BIT))
+	{
+		const vec4 _as_src = vec4(col0);
+		col0.rgb = _mrt_color_t(mix(_as_src, vec4(0.), greaterThanEqual(_as_src, vec4(0.5)))).rgb;
+	}
+	else if (_test_bit(rop_control, SIGNED_BLEND_SPLIT_PASS1_BIT))
+	{
+		const vec4 _as_src = vec4(col0);
+		col0.rgb = _mrt_color_t(mix(vec4(0.), vec4(256. / 255.) - _as_src, greaterThanEqual(_as_src, vec4(0.5)))).rgb;
+	}
+
 	// Commit
 	ocol0 = col0;
 	ocol1 = col1;

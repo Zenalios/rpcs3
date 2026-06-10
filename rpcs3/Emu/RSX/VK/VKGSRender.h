@@ -57,6 +57,10 @@ private:
 	vk::glsl::program *m_prev_program = nullptr;
 	vk::pipeline_props m_pipeline_properties;
 
+	// Signed blend equation emulation (issue #11149): the previous draw's signed-blend state.
+	// Used to refresh the fragment env when the ROP split bits toggle between draws.
+	bool m_prev_draw_was_signed_blend = false;
+
 	const vs_binding_table_t* m_vs_binding_table = nullptr;
 	const fs_binding_table_t* m_fs_binding_table = nullptr;
 

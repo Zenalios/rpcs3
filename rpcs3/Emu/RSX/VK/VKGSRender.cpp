@@ -26,6 +26,10 @@
 #include "util/asm.hpp"
 #include <vulkan/vulkan_core.h>
 
+// Signed blend equation emulation (issue #11149): current pass of the two-pass wrapping-add split.
+// Defined in RSXDrawCommands.cpp.
+extern u32 g_rsx_addsigned_pass;
+
 namespace vk
 {
 	VkCompareOp get_compare_func(rsx::comparison_function op, bool reverse_direction = false);
@@ -294,12 +298,14 @@ namespace vk
 				break;
 			}
 
+			// The second pass of the signed-blend split must not touch alpha; it was already
+			// committed correctly by the first pass and would otherwise blend twice.
 			properties.state.set_color_mask(
 				index,
 				color_mask_r && host_write_mask[0],
 				color_mask_g && host_write_mask[1],
 				color_mask_b && host_write_mask[2],
-				color_mask_a && host_write_mask[3]);
+				color_mask_a && host_write_mask[3] && (g_rsx_addsigned_pass == 0));
 		}
 
 		// LogicOp and Blend are mutually exclusive. If both are enabled, LogicOp takes precedence.
@@ -328,6 +334,26 @@ namespace vk
 				dfactor_a = vk::get_blend_factor(rsx::method_registers.blend_func_dfactor_a());
 				equation_rgb = vk::get_blend_op(rsx::method_registers.blend_equation_rgb());
 				equation_a = vk::get_blend_op(rsx::method_registers.blend_equation_a());
+
+				// FUNC_ADD_SIGNED/FUNC_REVERSE_SUBTRACT_SIGNED (issue #11149):
+				// On RSX the SIGNED blend equations perform a wrapping (two's-complement) byte add: sources
+				// encode negative deltas in the upper half of the byte range and accumulation does not saturate.
+				// Hardware-verified by inFamous's distortion accumulation (RT cleared to 0x80 midpoint, fragment
+				// ucode wraps outputs at the -0.5/255 quantization boundary). Fixed-function UNORM blending cannot
+				// wrap, so each such draw is split into two passes (see VKGSRender::end and RSXROPEpilogue.glsl):
+				// pass 0 adds the positive deltas (FUNC_ADD), pass 1 subtracts the negative magnitudes
+				// (FUNC_REVERSE_SUBTRACT). The ROP epilogue separates the halves per channel.
+				switch (rsx::method_registers.blend_equation_rgb())
+				{
+				case rsx::blend_equation::add_signed:
+					equation_rgb = (g_rsx_addsigned_pass == 0) ? VK_BLEND_OP_ADD : VK_BLEND_OP_REVERSE_SUBTRACT;
+					break;
+				case rsx::blend_equation::reverse_subtract_signed:
+					equation_rgb = (g_rsx_addsigned_pass == 0) ? VK_BLEND_OP_REVERSE_SUBTRACT : VK_BLEND_OP_ADD;
+					break;
+				default:
+					break;
+				}
 
 				for (u8 idx = 0; idx < num_draw_buffers; ++idx)
 				{

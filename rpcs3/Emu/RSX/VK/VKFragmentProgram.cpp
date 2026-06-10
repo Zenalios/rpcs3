@@ -490,11 +490,13 @@ void VKFragmentDecompilerThread::insertMainEnd(std::stringstream & OS)
 	OS << "void main()\n";
 	OS << "{\n";
 
+	// rop_control is read unconditionally: the ROP epilogue checks the signed-blend split bits at runtime
+	OS <<
+		"	const uint rop_control = fs_contexts[_fs_context_offset].rop_control;\n";
 	if ((m_prog.ctrl & RSX_SHADER_CONTROL_ALPHA_TEST) ||
 		(m_prog.ctrl & RSX_SHADER_CONTROL_EMULATE_DEPTH_COMPARE))
 	{
 		OS <<
-			"	const uint rop_control = fs_contexts[_fs_context_offset].rop_control;\n"
 			"	const float alpha_ref = fs_contexts[_fs_context_offset].alpha_ref;\n\n";
 	}
 

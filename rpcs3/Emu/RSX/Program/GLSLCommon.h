@@ -32,6 +32,10 @@ namespace rsx
 		ALPHA_FUNC_NUM_BITS          = 3,
 		MSAA_SAMPLE_CTRL_NUM_BITS    = 2,
 
+		// Signed blend equation emulation passes (issue #11149)
+		SIGNED_BLEND_SPLIT_PASS0_BIT = 25,
+		SIGNED_BLEND_SPLIT_PASS1_BIT = 26,
+
 		// Meta
 		ROP_CMD_MASK                 = 0xF // Commands are encoded in the lower 16 bits
 	};
@@ -50,6 +54,7 @@ namespace rsx
 
 		void set_alpha_test_func(uint func) { value |= (func << ROP_control_bits::ALPHA_FUNC_OFFSET); }
 		void set_msaa_control(uint ctrl) { value |= (ctrl << ROP_control_bits::MSAA_SAMPLE_CTRL_OFFSET); }
+		void enable_signed_blend_split(u32 pass) { value |= (1u << (ROP_control_bits::SIGNED_BLEND_SPLIT_PASS0_BIT + pass)); }
 	};
 }
 
